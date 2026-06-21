@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>青岛各区县人口流动图(2020-2024)</title>
+    <!-- 引入ECharts CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        #main {
+            width: 1200px;
+            height: 900px;
+            margin: 0 auto;
+        }
+    </style>
+</head>
+<body>
+    <div id="main"></div>
+
+    <script>
+        const myChart = echarts.init(document.getElementById('main'));
+
+        // 1. 区县坐标映射（已修正黄岛纬度）
+        const cityCoord = {
+            "市南区": [120.447, 36.060],
+            "市北区": [120.375, 36.088],
+            "黄岛区": [120.168, 36.088],
+            "崂山区": [120.469, 36.108],
+            "李沧区": [120.396, 36.146],
+            "城阳区": [120.396, 36.308],
+            "即墨区": [120.527, 36.513],
+            "胶州市": [120.034, 36.265],
+            "平度市": [119.970, 36.754],
+            "莱西市": [120.518, 36.889]
+        };
+
+        // 组装区县中心点散点数据
+        const pointData = Object.keys(cityCoord).map(name => {
+            return {
+                name: name,
+                value: cityCoord[name]
+            }
+        })
+
+        // 2. 流向数据：fromName 流出地, toName 流入地, value 流动规模(万人)
+        const flowData = [
+            // 平度主流流出
+            {fromName:"平度市", toName:"黄岛区", value:0.80},
+            {fromName:"平度市", toName:"城阳区", value:0.50},
+            {fromName:"平度市", toName:"胶州市", value:0.30},
+            {fromName:"平度市", toName:"即墨区", value:0.20},
+            // 莱西主流流出
+            {fromName:"莱西市", toName:"黄岛区", value:0.40},
+            {fromName:"莱西市", toName:"城阳区", value:0.30},
+            {fromName:"莱西市", toName:"即墨区", value:0.17},
+            // 主城内部流动
+            {fromName:"市南区", toName:"李沧区", value:0.20},
+            {fromName:"市北区", toName:"李沧区", value:0.20},
+            {fromName:"崂山区", toName:"城阳区", value:0.15},
+            // 近郊中转流动
+            {fromName:"胶州市", toName:"黄岛区", value:0.25},
+            {fromName:"即墨区", toName:"城阳区", value:0.20}
+        ];
+
+        // 3. 组装ECharts所需线条数据（拼接经纬度）
+        const seriesData = flowData.map(item => {
+            return {
+                fromName: item.fromName,
+                toName: item.toName,
+                value: item.value,
+                coords: [
+                    cityCoord[item.fromName],
+                    cityCoord[item.toName]
+                ]
+            }
+        });
+
+        // 4. 加载青岛地图 + 渲染图表
+        fetch("./qingdao.json")
+        .then(res => res.json())
+        .then(qingdaoGeo => {
+            // 注册地图
+            echarts.registerMap('qingdao', qingdaoGeo);
+
+            const option = {
+                title: {
+                    text: "青岛各区县人口流动示意图（2020-2024）",
+                    left: "center",
+                    textStyle: {fontSize: 18, color: "#333"}
+                },
+                tooltip: {
+                    trigger: "item",
+                    formatter: function(params) {
+                        // 流动线条提示
+                        if(params.data.fromName){
+                            return `${params.data.fromName} → ${params.data.toName}<br/>流动规模：${params.data.value} 万人`
+                        }
+                        // 区县中心点提示
+                        return params.name;
+                    }
+                },
+                geo: {
+                    map: "qingdao",
+                    roam: true,       // 支持鼠标缩放、拖拽
+                    zoom: 1.3,        // 初始缩放大小
+                    label: {
+                        show: true,
+                        fontSize: 10,
+                        color: "#222"
+                    },
+                    itemStyle: {
+                        areaColor: "#e8f4fc",
+                        borderColor: "#99c9e8"
+                    },
+                    emphasis: {
+                        itemStyle: {areaColor: "#b3d8f4"}
+                    }
+                },
+                series: [
+                    // 第一层：区县中心点散点
+                    {
+                        name: "区县中心点",
+                        type: "scatter",
+                        coordinateSystem: "geo",
+                        zlevel: 3, // 层级高于流动线条，不会被遮挡
+                        symbolSize: 8, // 中心点圆点大小，可修改
+                        itemStyle: {
+                            color: "#0066cc" // 中心点颜色
+                        },
+                        data: pointData
+                    },
+                    // 第二层：人口流动动态运动流线
+                    {
+                        name: "人口流动",
+                        type: "lines",
+                        coordinateSystem: "geo",
+                        zlevel: 2,
+                        // 流线动画：period=3 速度更快
+                        effect: {
+                            show: true,
+                            period: 3,
+                            trailLength: 0.7,
+                            symbol: "circle",
+                            symbolSize: 4
+                        },
+                        // 线条加粗：乘以6，比原来更粗
+                        lineStyle: {
+                            width: function(params) {
+                                return params.data.value * 6;
+                            },
+                            color: "#1890ff",
+                            curveness: 0.25 // 线条弯曲度，防线条重叠
+                        },
+                        data: seriesData
+                    }
+                ]
+            };
+
+            myChart.setOption(option);
+        })
+        .catch(err => {
+            alert("地图文件加载失败，请检查 青岛.json 和 html 文件是否在同一文件夹！");
+            console.error(err);
+        });
+
+        // 窗口大小自适应
+        window.addEventListener("resize", () => myChart.resize());
+    </script>
+</body>
+</html>
